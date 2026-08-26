@@ -1,6 +1,8 @@
 # ARQUITETURA OFICIAL
 
-> **Status:** v0.4 — J0 fechada, pronta para Janela 1. Fonte única de verdade do projeto.
+> **Status:** v0.5 — J0 fechada, artefato ORT 1.28.0 adquirido e
+> verificado, harness dos agentes preparado. Pronta para Janela 1.
+> Fonte única de verdade do projeto.
 > **Última atualização:** 2026-08-26
 >
 > Como ler: tudo aqui está rotulado como **[VERIFICADO]** (testado nesta
@@ -269,6 +271,40 @@ arbitrário. O carregador deve, antes de abrir:
 
 Erros de todos esses casos são distintos e explícitos. Isto é requisito
 de v1, não polimento.
+
+### 3.4a Política de versões — sempre a mais recente estável **[DECIDIDO — 2026-08-26]**
+
+**Regra do Pablo:** Go e todas as dependências acompanham sempre a versão
+estável mais recente disponível — **nunca** beta, RC ou tag `-pre`. Vale
+tanto para o `go.mod` quanto para módulos de terceiros.
+
+**Verificado em 2026-08-26** contra `https://go.dev/dl/?mode=json`
+(única fonte autoritativa de releases estáveis do Go):
+
+```
+$ curl -s 'https://go.dev/dl/?mode=json' | jq -r '.[] | select(.stable) | .version'
+go1.27.0   <- mais recente estável
+go1.26.7
+```
+
+`go.mod` deve declarar `go 1.27.0`, com `toolchain go1.27.0` — isso faz o
+próprio comando `go` baixar e usar o compilador certo automaticamente,
+mesmo que o binário local esteja atrasado (suporte nativo desde Go 1.21).
+
+> **Pendência não bloqueante:** o `go` instalado nesta máquina é
+> **1.26.2** — mais antigo até que o 1.26.7, e duas versões menores atrás
+> do 1.27.0. O `toolchain` directive cobre isso automaticamente na
+> primeira compilação, mas vale atualizar o binário local também
+> (`go install golang.org/dl/go1.27.0@latest` ou reinstalar via
+> gerenciador de pacotes) antes da Janela 1, para não depender do
+> download automático em toda máquina nova.
+
+**Dependências de terceiros seguem a mesma regra** — sempre a última tag
+estável publicada, nunca `main`/`master` não lançado. Já aplicado nas
+decisões anteriores: `purego@v0.10.2` foi escolhido em vez do `main` não
+lançado precisamente por essa razão (`§2.6.4` — o `main` tem `maxArgs=32`
+mas não é uma versão tagueada). Antes de fixar uma dependência nova,
+confirmar a tag mais recente no repositório de origem, não assumir.
 
 ### 3.4 Plataforma do v1 — linux/amd64 **[DECIDIDO]**
 
@@ -634,6 +670,54 @@ continua obrigatória mesmo com offsets estáveis observados aqui.
 `v1.28.0` completo antes de abrir a Janela 1 — é precisamente o "custo
 imediato" que você já havia antecipado.
 
+#### 6.7.1 Pendência resolvida — artefato adquirido e verificado ao vivo **[RESOLVIDO — 2026-08-26]**
+
+Baixado o release oficial `onnxruntime-linux-x64-1.28.0.tgz` (assets da
+tag `v1.28.0`, GitHub), não a `.so` de um pacote Python. Fica em
+**`~/.cache/goembed/onnxruntime/1.28.0/`** (fora do repositório, nunca
+commitado — coerente com a §3.1: é o mesmo caminho que um usuário real
+apontaria via `$ONNXRUNTIME_LIB_PATH`).
+
+```
+$ nm -D --defined-only libonnxruntime.so.1.28.0 | grep -c " T "
+2                                    # confirma §2.1 também na 1.28.0
+```
+
+Reexecutei o spike zero-CGO da §2.4 (mesmo binário Go, `CGO_ENABLED=0`)
+contra o `.so` real 1.28.0, não apenas contra o header estático:
+
+```
+OK [3] GetVersionString = "1.28.0"
+OK [4] GetApi(28) -> *OrtApi
+OK [5] CreateEnv -> 0xa429850          // offsets da 1.24.3 continuam válidos
+OK [6] caminho de erro: ort: Load model from ... failed. File doesn't exist
+>>> PREMISSA ZERO-CGO: CONFIRMADA (1.28.0)
+```
+
+**Achado adicional — o contrato exato do `GetApi`, mais preciso que a
+formulação anterior.** Testei as três chamadas:
+
+| Chamada | Runtime | Resultado |
+|---|---|---|
+| `GetApi(24)` | 1.28.0 | **sucesso** — devolve a struct atual, não uma versão histórica menor |
+| `GetApi(28)` | 1.28.0 | sucesso |
+| `GetApi(29)` | 1.28.0 | `nil`, com mensagem do próprio ORT: *"only API versions [1, 28] are supported... Current ORT Version is: 1.28.0"* |
+
+`GetApi(24)` ter sucedido contra o runtime 1.28.0 prova, na prática, o que
+a §6.7 já inferia da ABI aditiva: **o requisito é `versão_pedida ≤
+versão_do_runtime`, não igualdade.** O runtime sempre devolve a struct
+atual e completa — nunca uma struct histórica truncada.
+
+**Consequência de segurança, mais precisa que a redação anterior:** o
+`GetApi` protege contra um binário **atrasado demais** para os offsets
+gerados (pede versão alta, `.so` velho devolve `nil`). Ele **não**
+protege — nem tem como proteger — contra a suposição implícita de que a
+ABI seguirá aditiva para sempre. Essa suposição é a única coisa que
+sustenta os offsets estáveis medidos acima. É por isso que a checagem de
+`GetVersionString()` (§2.3) permanece obrigatória como primeiro passo do
+`Load()`: ela é a única verificação deste desenho que não depende dessa
+suposição continuar valendo nas versões futuras.
+
 ---
 
 ## 7. Plano tático da v1.0
@@ -688,3 +772,4 @@ companheiro com a `.so` embutida · plataformas além de linux/amd64 (§3.4)
 | 2026-08-26 | v0.2 — crítica do Pablo incorporada: `runtime.Pinner` obrigatório (§3.6); invariante único de propriedade de memória resolve o acoplamento do `AllocatorFree` (§3.5); tokenizer do v1 limitado à família BERT (§6.4); plano tático reconstruído e internalizado (§7). Proposta de gerador com verificação de assinatura pelo compilador C (§6.1) aguarda crítica. |
 | 2026-08-26 | v0.3 — **pesquisa de mercado (§2.6) refuta duas premissas da §1.1**: `hugot` já é zero-CGO no build padrão, e `CGO_ENABLED=0` com purego não gera binário estático. Proposta de valor **reformulada** para "velocidade nativa do ORT sem CGO no build". Descobertas adicionais: `SyscallN` é incorreto para assinaturas com float e `maxArgs`=15 na v0.10.2 (§2.6.4) → §6.1 passa a exigir `RegisterFunc`; existe tokenizer HF em Go puro mais completo que a §2.5 → abre §6.6; `ORT_API_VERSION == minor` confirmado → abre §6.7. |
 | 2026-08-26 | v0.4 — **J0 fechada.** §6.1 (gerador via `RegisterFunc`), §6.3 (Apache-2.0, módulo `github.com/<usuário>/goembed`), §6.6 (tokenizer construído — justificativa acadêmica: PPComp/IFES Serra) e §6.7 (pinar ORT 1.28.0) decididos pelo Pablo. §6.7 verificada antes de aceitar: offsets das 25 funções do steel thread são **idênticos** entre 1.24.3 (415 ponteiros) e 1.28.0 (424 ponteiros) — campos novos anexados ao final, não é garantia da API C. Módulo fechado: `github.com/pablobelmiro/goembed`. Pendência restante para abrir J1: `.so`/header 1.28.0 nesta máquina. |
+| 2026-08-26 | v0.5 — **Pendência do §6.7 resolvida** (§6.7.1): release oficial ORT 1.28.0 baixado para `~/.cache/goembed/onnxruntime/1.28.0/` (fora do repo); spike zero-CGO reexecutado contra o binário real, confirmado; contrato exato do `GetApi` verificado (`versão ≤ runtime`, struct sempre completa e atual). Repositório git inicializado, primeiro commit feito. Harness dos agentes: `CLAUDE.md` do projeto criado. Nova política §3.4a: Go e dependências sempre na última versão estável publicada (nunca beta/RC/`main`) — Go local (1.26.2) está atrasado frente à estável atual (1.27.0). `LOG_DEVELOPMENT.md` criado como diário de sessões. |
