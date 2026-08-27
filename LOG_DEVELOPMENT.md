@@ -113,11 +113,16 @@ teste), só então começar a escrever código.
 **Feito:**
 - `go.mod` bootstrapped (`github.com/pablobelmiro/goembed`, Go 1.27.0).
 - `internal/ortgen`: gerador que compila `dump_offsets.c` contra o
-  header pinado, executa e emite `ortcore/ortapi_gen.go`. Assinatura de
+  header pinado, executa e emite `ortcore/ortapi_gen.go`. Assinatura C de
   cada uma das ~25 funções do steel thread é verificada pelo compilador
-  C (`__typeof__` + `__builtin_types_compatible_p`, nunca executado) —
-  provado que uma assinatura divergente falha a compilação do gerador,
-  não corrompe silenciosamente um offset.
+  (`__typeof__` + `__builtin_types_compatible_p`, nunca executado); a
+  aridade do tipo Go correspondente é cross-checada contra essa mesma
+  assinatura C em `main.go` (achado Important 1 da revisão final de
+  branch — o lado Go era digitado à mão sem checagem nenhuma até esta
+  correção). Provado, com dois testes, que uma assinatura C divergente
+  falha a compilação do gerador (não corrompe silenciosamente um
+  offset) e que um tipo Go divergente (aridade errada) falha a
+  checagem de aridade em `generate()`.
 - `ortcore/ortapi_gen.go` gerado e commitado, com teste de regressão
   contra os offsets já verificados em `ARQUITETURA_OFICIAL.md` §2.2.
 - `CGO_ENABLED=0 go build ./... && go vet ./... && go test ./...` passa
@@ -131,3 +136,42 @@ teste), só então começar a escrever código.
 
 **Próximo passo:** planejar J2 (`ortcore`: carga e erros) via
 `writing-plans`.
+
+---
+
+## 2026-08-27 — J1: rodada final de correção (revisão de branch inteiro)
+
+**Contexto:** a revisão final da J1 inteira (revisor sênior, reprodução
+independente empírica) encontrou 3 achados Important e 8 Minor. Veredito
+"Ready to merge — With fixes"; nenhum justificava reabrir a janela.
+Relatório completo em
+`.superpowers/sdd/2026-08-26-j1-ortgen/final-fix-report.md`.
+
+**Feito:**
+- **Important 1** (o mais delicado): a verificação de assinatura só
+  cobria o lado C; `GOSIG` era digitada à mão sem checagem — provado
+  mutável sem erro. Fechado: `dump_offsets.c` agora emite a assinatura C
+  como comentário `// C: ...` acima de cada tipo Go, e `generate()` em
+  `internal/ortgen/main.go` cross-checa aridade dos dois lados. Novo
+  teste `TestGenerate_DivergentGoSignatureFailsArityCheck` prova o
+  fechamento. `ortcore/ortapi_gen.go` regenerado.
+- **Important 2:** erros de `cc`/do binário gerado agora incluem o `err`
+  original (e `Stderr` de `*exec.ExitError`), não só a saída capturada.
+- **Important 3:** `ARQUITETURA_OFICIAL.md` atualizada — §5.1 marcada
+  `[RESOLVIDO]`, §7 marca J1 fechada, cabeçalho e §8 em v0.6, nota sobre
+  o padrão de emissão de offsets (constantes individuais, não bloco
+  `const (...)`, por causa do realinhamento do `go/format`).
+- **Minors:** `gofmt` aplicado e `TestSteelThreadOffsets` reestruturado
+  (slice de structs, cobre todos os offsets); comentário de topo de
+  `dump_offsets.c` traduzido, sem referência a "Task 1-3"; `ORT_HEADER_DIR`
+  documentado em `ortcore/generate.go`; `$CC` respeitado com fallback
+  `cc`; cabeçalho gerado nomeia a versão do ORT; frase deste diário
+  (entrada anterior) corrigida para mencionar o cross-check de aridade;
+  `.gitignore` criado (`/ortgen`, `.claude/`, `.superpowers/`).
+
+**Decisões:** nenhuma nova — só correções ao já fechado em J1/§6.1.
+
+**Pendências:** nenhuma. `ortcore.go` (J2) segue não iniciado.
+
+**Próximo passo:** planejar J2 via `writing-plans`, como já registrado
+acima.
