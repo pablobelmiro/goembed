@@ -144,8 +144,9 @@ teste), só então começar a escrever código.
 **Contexto:** a revisão final da J1 inteira (revisor sênior, reprodução
 independente empírica) encontrou 3 achados Important e 8 Minor. Veredito
 "Ready to merge — With fixes"; nenhum justificava reabrir a janela.
-Relatório completo em
-`.superpowers/sdd/2026-08-26-j1-ortgen/final-fix-report.md`.
+(Relatório completo vivia em `.superpowers/sdd/`, workspace do plano —
+apagado ao fechar a J1, como o processo determina; o resumo abaixo e o
+commit `a1b7acd` são o registro permanente.)
 
 **Feito:**
 - **Important 1** (o mais delicado): a verificação de assinatura só
@@ -175,3 +176,73 @@ Relatório completo em
 
 **Próximo passo:** planejar J2 via `writing-plans`, como já registrado
 acima.
+
+---
+
+## 2026-08-27 — J1: re-revisão final aprovada, push, pausa
+
+**Contexto:** depois da leva de correção acima, uma re-revisão da leva
+inteira (também de branch inteiro, modelo mais capaz) reproduziu de
+forma independente cada um dos 3 Important + 8 Minor — inclusive
+mutando assinaturas de novo, com funções diferentes das que o
+implementador tinha usado, e testando casos de borda do checador de
+aridade (`(void)`, parâmetro único sem vírgula, ponteiro de função
+aninhado, entrada malformada). Todos os 11 vieram **ADDRESSED**,
+nenhuma quebra nova. Essa era a última rodada de correção automática
+permitida pelo processo — o que sobrasse seria adjudicado por mim, não
+corrigido de novo.
+
+**Feito:**
+- 5 achados residuais (R1-R5) levantados pela própria re-revisão,
+  todos adjudicados nesta sessão (nenhum bloqueia a J2):
+  - **R1 (parked, real):** o guarda de aridade Go que a leva anterior
+    construiu é ele mesmo desguarnecido — se as linhas `// C: ...`
+    sumirem de `dump_offsets.c`, `checkGoSignatureArity` não acha
+    nada, não erra, e a suíte de testes atual não percebe (só conta
+    ocorrências de `"type fn"`, nunca de `"// C: "`). Provado
+    removendo o `printf` do comentário e mutando `Run` ao mesmo
+    tempo — passou limpo. Correção recomendada, barata: um `assert`
+    contando `// C: ` == 25 dentro de `checkGoSignatureArity` (ou como
+    asserção extra em `TestGenerate_AgainstRealHeader`).
+  - **R2 (parked, baixa severidade):** `fnGetApi` e
+    `fnGetVersionString` (os 2 tipos de `OrtApiBase`, fora do X-macro)
+    não recebem comentário `// C: ` — corretos hoje por inspeção, não
+    por construção.
+  - **R3 (sem ação, por design):** o guarda checa só aridade, não
+    tipo (`int32`↔`float64` passaria). Já documentado no código como
+    escopo intencional; um erro desse tipo vira bug de runtime na J2
+    (`purego.RegisterFunc`), não de build.
+  - **R4 (parked, cosmético — corrigido nesta mesma edição):** a
+    entrada anterior deste diário apontava para
+    `.superpowers/sdd/2026-08-26-j1-ortgen/final-fix-report.md`, path
+    do workspace do plano, já removido ao fechar a J1 (ver nota
+    editada acima). Corrigido para não apontar mais para um arquivo
+    que não existe.
+  - **R5 (sem ação, já mitigado):** a versão do ORT no cabeçalho
+    gerado é uma string separada de `ortAPIVersion`; um bump de patch
+    (1.28.0→1.28.1) não quebraria `TestOrtAPIVersionIsPinned` (só
+    checa a versão de API). Já há comentário no código avisando para
+    atualizar os dois juntos — não vale um mecanismo extra por uma
+    string cosmética de patch.
+- Workspace do plano (`.superpowers/sdd/2026-08-26-j1-ortgen/`)
+  apagado — git-ignored desde o começo, o histórico do git é o
+  registro permanente a partir daqui.
+- `git push -u origin master` feito com sucesso para
+  `git@github.com:pablobelmiro/goembed.git` (repo remoto estava vazio,
+  sem conflito). Branch `master` local agora rastreia `origin/master`.
+
+**Decisões:** nenhuma nova de arquitetura — só as 6 rulings de processo
+desta janela (aceitar a correção do `go.mod`; aceitar a data real da
+sessão sobre a data literal do brief; e as 4 acima, R1/R2/R4 parked,
+R3/R5 sem ação).
+
+**Pendências:** R1, R2 e R4 seguem reais mas não bloqueiam a J2 —
+candidatos naturais para virar a primeira tarefa da J2, ou uma janela
+de limpeza rápida antes dela. Nenhuma outra pendência da J1.
+
+**PAUSADO AQUI, a pedido do Pablo.** A J1 está fechada, revisada,
+documentada e no remote. Para retomar exatamente deste ponto: ler este
+diário (esta entrada) + `ARQUITETURA_OFICIAL.md` (v0.7, ver §8) — não
+depender de memória de conversa. Próximo passo real: decidir se R1/R2/R4
+entram antes da J2 ou junto com ela, depois planejar a J2
+(`ortcore`: carga e erros) via `writing-plans`.
