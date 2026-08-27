@@ -102,3 +102,32 @@ adquirido e verificado), §7 (plano tático em 7 janelas).
 **Próximo passo:** invocar o skill `writing-plans` para transformar a J1
 da §7 num plano de implementação detalhado (arquivos, ordem, critérios de
 teste), só então começar a escrever código.
+
+---
+
+## 2026-08-27 — J1: internal/ortgen fechada
+
+**Contexto:** primeira janela de código do projeto, seguindo o plano em
+`docs/plans/2026-08-26-j1-ortgen.md`.
+
+**Feito:**
+- `go.mod` bootstrapped (`github.com/pablobelmiro/goembed`, Go 1.27.0).
+- `internal/ortgen`: gerador que compila `dump_offsets.c` contra o
+  header pinado, executa e emite `ortcore/ortapi_gen.go`. Assinatura de
+  cada uma das ~25 funções do steel thread é verificada pelo compilador
+  C (`__typeof__` + `__builtin_types_compatible_p`, nunca executado) —
+  provado que uma assinatura divergente falha a compilação do gerador,
+  não corrompe silenciosamente um offset.
+- `ortcore/ortapi_gen.go` gerado e commitado, com teste de regressão
+  contra os offsets já verificados em `ARQUITETURA_OFICIAL.md` §2.2.
+- `CGO_ENABLED=0 go build ./... && go vet ./... && go test ./...` passa
+  para o módulo inteiro.
+
+**Decisões:** nenhuma nova — execução do que já estava fechado em J0
+(§6.1).
+
+**Pendências:** nenhuma para J1. `ortcore.go` (struct `api`, `Load()`,
+`checkStatus`) ainda não existe — é a J2.
+
+**Próximo passo:** planejar J2 (`ortcore`: carga e erros) via
+`writing-plans`.

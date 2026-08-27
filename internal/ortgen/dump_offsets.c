@@ -1,3 +1,5 @@
+//go:build ignore
+
 // dump_offsets.c gera, via `go generate` (internal/ortgen), as
 // constantes de offset e os tipos de função Go que espelham a struct
 // OrtApi do ONNX Runtime pinado (ARQUITETURA_OFICIAL.md §6.7).
