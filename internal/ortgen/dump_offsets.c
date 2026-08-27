@@ -1,15 +1,14 @@
 //go:build ignore
 //
-// This file is embedded via //go:embed in main.go and compiled to a
-// standalone binary at generation time — it is never part of the Go
-// package's own build. The build tag above is a defensive measure: it
-// makes internal/ortgen buildable even if CGO_ENABLED=1 leaks into the
-// environment. Without this tag, `go build`/`go vet`/`go test` succeed
-// under CGO_ENABLED=0 (the mode this project always uses) with or
-// without it — but fail under CGO_ENABLED=1 with "C source files not
-// allowed when not using cgo or SWIG", because the go tool otherwise
-// treats a loose .c file with no `import "C"` as an error. This tag is
-// not a fix for any Task 1-3 defect; it is optional hardening.
+// Este arquivo é embutido via //go:embed em main.go e compilado para um
+// binário independente em tempo de geração — nunca faz parte do build do
+// pacote Go em si. A tag de build acima é uma defesa: mantém
+// internal/ortgen buildável mesmo que CGO_ENABLED=1 vaze do ambiente. Sem
+// ela, `go build`/`go vet`/`go test` já funcionam sob CGO_ENABLED=0 (o
+// modo que este projeto sempre usa) com ou sem a tag — mas falhariam sob
+// CGO_ENABLED=1 com "C source files not allowed when not using cgo or
+// SWIG", porque o `go` tool trataria este .c solto (sem `import "C"`)
+// como erro. A tag é reforço opcional, não correção de um defeito.
 
 // dump_offsets.c gera, via `go generate` (internal/ortgen), as
 // constantes de offset e os tipos de função Go que espelham a struct
@@ -111,7 +110,16 @@ int main(void) {
 
     printf("type fnGetApi func(version uint32) uintptr\n");
     printf("type fnGetVersionString func() uintptr\n");
+// PRINT_TYPE emite, para cada função, um comentário com a assinatura C
+// (estringizada via #CSIG — os parênteses internos da assinatura já
+// protegem suas vírgulas de serem lidas como separadores de argumento
+// da macro, então isso é seguro) imediatamente acima do tipo Go gerado.
+// Isso dá a internal/ortgen/main.go um par C/Go, linha a linha, contra o
+// qual conferir a aridade — sem esse comentário, GOSIG é uma string
+// digitada à mão sem nenhuma verificação (ver ARQUITETURA_OFICIAL.md,
+// achado Important 1 da revisão final da J1).
 #define PRINT_TYPE(NAME, CSIG, GOSIG) \
+    printf("// C: %s\n", #CSIG); \
     printf("type fn%s %s\n", #NAME, GOSIG);
     ORT_FUNCTIONS(PRINT_TYPE)
 

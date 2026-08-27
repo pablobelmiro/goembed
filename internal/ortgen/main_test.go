@@ -52,6 +52,33 @@ func TestGenerate_AgainstRealHeader(t *testing.T) {
 	}
 }
 
+func TestGenerate_DivergentGoSignatureFailsArityCheck(t *testing.T) {
+	dir := cachedHeaderDir(t)
+
+	// Deliberately drop one parameter from CreateSession's hand-typed Go
+	// signature (GOSIG) while leaving its C signature (CSIG) untouched.
+	// dump_offsets.c's CHECK macro only verifies CSIG against the real
+	// header — nothing previously verified GOSIG against CSIG, so this
+	// used to compile and generate without any error at all (the exact
+	// hole the final branch review demonstrated). It must now be caught
+	// by checkGoSignatureArity in generate(), which compares the "// C:
+	// ..." comment PRINT_TYPE emits against the paired Go type.
+	const original = `"func(env uintptr, modelPath uintptr, options uintptr, out *uintptr) uintptr") \`
+	const broken = `"func(env uintptr, modelPath uintptr, out *uintptr) uintptr") \`
+	brokenSrc := strings.Replace(dumpOffsetsC, original, broken, 1)
+	if brokenSrc == dumpOffsetsC {
+		t.Fatal("replacement did not match CreateSession's GOSIG line — did dump_offsets.c change?")
+	}
+
+	_, err := generate(dir, brokenSrc)
+	if err == nil {
+		t.Fatal("expected an arity-mismatch error for the divergent GOSIG, generate() succeeded")
+	}
+	if !strings.Contains(err.Error(), "fnCreateSession") {
+		t.Errorf("error does not mention fnCreateSession, got: %v", err)
+	}
+}
+
 func TestGenerate_DivergentSignatureFailsToCompile(t *testing.T) {
 	dir := cachedHeaderDir(t)
 
