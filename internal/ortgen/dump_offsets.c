@@ -1,4 +1,13 @@
 //go:build ignore
+//
+// Tell the Go compiler to ignore this file when processing the package.
+// This .c file is embedded via //go:embed in main.go and compiled to a
+// binary at generation time — not part of the Go build. The build tag
+// defends against CGO_ENABLED=1 leaking into the environment: without it,
+// the compiler would reject the .c file under CGO_ENABLED=0 (expected
+// behavior per Go's design), but accepting CGO_ENABLED=1 would also
+// trigger rejection unless this tag is present. This tag ensures robustness
+// regardless of the CGO environment variable.
 
 // dump_offsets.c gera, via `go generate` (internal/ortgen), as
 // constantes de offset e os tipos de função Go que espelham a struct
