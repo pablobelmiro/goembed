@@ -108,7 +108,9 @@ int main(void) {
     ORT_FUNCTIONS(PRINT_OFFSET)
     printf("\n");
 
+    printf("// C: const OrtApi*(*)(uint32_t)\n");
     printf("type fnGetApi func(version uint32) uintptr\n");
+    printf("// C: const char*(*)(void)\n");
     printf("type fnGetVersionString func() uintptr\n");
 // PRINT_TYPE emite, para cada função, um comentário com a assinatura C
 // (estringizada via #CSIG — os parênteses internos da assinatura já

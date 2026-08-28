@@ -246,3 +246,51 @@ diário (esta entrada) + `ARQUITETURA_OFICIAL.md` (v0.7, ver §8) — não
 depender de memória de conversa. Próximo passo real: decidir se R1/R2/R4
 entram antes da J2 ou junto com ela, depois planejar a J2
 (`ortcore`: carga e erros) via `writing-plans`.
+
+---
+
+## 2026-08-28 — Fecha R1 e R2 da §6.8, retoma rumo à J2
+
+**Contexto:** retomada da pausa acima. Pablo pediu para avançar nos
+próximos passos já registrados: decidir o destino das pendências de
+baixo risco da J1 e seguir para a J2.
+
+**Feito:**
+- **R1 fechada:** `checkGoSignatureArity` (`internal/ortgen/main.go`)
+  agora conta quantas declarações `type fn` existem no fonte gerado e
+  exige que o mesmo número tenha sido pareado com um comentário
+  `// C: ` — antes, se esse comentário sumisse de `dump_offsets.c`
+  (por exemplo, numa edição futura do gerador), o checador
+  simplesmente não achava nada para comparar e retornava sucesso.
+  Teste novo, `TestGenerate_MissingSignatureCommentFailsArityCheck`,
+  reproduz exatamente isso (remove a linha do `printf` do comentário)
+  e prova que `generate()` agora falha em vez de aceitar em silêncio.
+- **R2 fechada:** `fnGetApi` e `fnGetVersionString` — os 2 tipos de
+  `OrtApiBase`, emitidos fora do X-macro `ORT_FUNCTIONS` — ganharam
+  comentário `// C: ` (`const OrtApi*(*)(uint32_t)` e
+  `const char*(*)(void)`, os mesmos textos já usados nos
+  `_Static_assert` correspondentes). Cobertura do cross-check: 27/27
+  tipos gerados, não mais 25/27.
+- R3 (o guarda checa só aridade, não tipo) permanece sem ação — é
+  escopo intencional já documentado, não um defeito.
+- Decidi fazer as duas correções diretamente nesta sessão, sem
+  orquestração via subagentes (implementador + revisor) como na J1 —
+  são mudanças pequenas, mecânicas, com verificação clara (a própria
+  suíte de testes prova o fechamento), e a área tocada
+  (`internal/ortgen`, ferramenta de build) tem risco bem menor que
+  `ortcore` (fronteira FFI de runtime, essa sim de alto escrutínio).
+  Autoverificado com o mesmo rigor: `go generate` reexecutado e
+  byte-idêntico (reprodutível), `CGO_ENABLED=0 go build/vet/test ./...`
+  limpo, `gofmt -l .` vazio.
+- `ARQUITETURA_OFICIAL.md` atualizada para v0.8 (§6.8 itens 1-2
+  marcados `[RESOLVIDO]`, item 3 mantido como "sem ação").
+
+**Decisões:** nenhuma de arquitetura — só o fechamento mecânico de R1
+e R2, já com o desenho definido na sessão anterior.
+
+**Pendências:** nenhuma da J1. R4 (referência quebrada no diário) já
+tinha sido corrigida na sessão anterior. Só resta o item 3 da §6.8,
+que é intencional, não uma pendência real.
+
+**Próximo passo:** planejar a J2 (`ortcore`: carga e erros) via
+`writing-plans`, como já estava combinado.

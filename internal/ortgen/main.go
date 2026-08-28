@@ -127,7 +127,20 @@ func ccCommand() string {
 // Go compiler's job once the wrapper is used — just arity, which is
 // enough to catch a dropped or added parameter like the one the review
 // used to demonstrate the hole.
+//
+// It also guards against a subtler regression than a wrong signature:
+// a missing one. Every "type fnX" declaration in src must be preceded
+// by a "// C: " comment — if dump_offsets.c's PRINT_TYPE macro ever
+// stops emitting that comment (for any entry, including the two
+// OrtApiBase types outside the ORT_FUNCTIONS X-macro), the loop below
+// would simply find nothing to check for that entry and return nil,
+// silently reopening the exact hole this function exists to close.
+// Counting declarations against checked pairs turns that into a loud
+// failure instead (ARQUITETURA_OFICIAL.md §6.8, item 1).
 func checkGoSignatureArity(src string) error {
+	wantChecks := strings.Count(src, "\ntype fn")
+	checked := 0
+
 	lines := strings.Split(src, "\n")
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -154,6 +167,11 @@ func checkGoSignatureArity(src string) error {
 			return fmt.Errorf("%s: C signature has %d parameter(s) but the generated Go type has %d — C=%q Go=%q",
 				name, cArity, goArity, cSig, typeLine)
 		}
+		checked++
+	}
+
+	if checked != wantChecks {
+		return fmt.Errorf("%d generated type declaration(s) but only %d were paired with a \"// C: \" signature comment — every generated type must be arity-checked, none may be silently unguarded", wantChecks, checked)
 	}
 	return nil
 }

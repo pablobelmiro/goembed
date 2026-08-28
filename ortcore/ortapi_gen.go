@@ -32,7 +32,10 @@ const offReleaseValue = 768
 const offReleaseMemoryInfo = 752
 const offReleaseTensorTypeAndShapeInfo = 792
 
+// C: const OrtApi*(*)(uint32_t)
 type fnGetApi func(version uint32) uintptr
+
+// C: const char*(*)(void)
 type fnGetVersionString func() uintptr
 
 // C: OrtStatus*(*)(OrtLoggingLevel, const char*, OrtEnv**)

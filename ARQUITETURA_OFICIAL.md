@@ -1,13 +1,10 @@
 # ARQUITETURA OFICIAL
 
-> **Status:** v0.7 — J0 e J1 fechadas, revisadas (revisão final de
-> branch inteiro + re-revisão de correção, ambas independentes) e no
-> remote (`git@github.com:pablobelmiro/goembed.git`, branch `master`).
-> **Sessão pausada aqui a pedido do Pablo** — ver §6.8 para as 3
-> pendências técnicas de baixo risco adiadas, e `LOG_DEVELOPMENT.md`
-> (entrada final de 2026-08-27) para retomar. Pronta para Janela 2.
+> **Status:** v0.8 — J0 e J1 fechadas e revisadas; as 2 pendências
+> acionáveis da §6.8 (guarda de aridade Go autoprotegido; cobertura
+> 27/27) também fechadas e verificadas. Pronta para planejar a J2.
 > Fonte única de verdade do projeto.
-> **Última atualização:** 2026-08-27
+> **Última atualização:** 2026-08-28
 >
 > Como ler: tudo aqui está rotulado como **[VERIFICADO]** (testado nesta
 > máquina, com método e data), **[DECIDIDO]** (escolha feita, com
@@ -747,32 +744,36 @@ sustenta os offsets estáveis medidos acima. É por isso que a checagem de
 `Load()`: ela é a única verificação deste desenho que não depende dessa
 suposição continuar valendo nas versões futuras.
 
-### 6.8 Pendências técnicas de baixo risco, herdadas da J1 **[DECIDIDO — adiadas, 2026-08-27]**
+### 6.8 Pendências técnicas de baixo risco, herdadas da J1 **[itens 1-2 RESOLVIDOS — 2026-08-28]**
 
 Levantadas pela re-revisão final da J1 (a última rodada de correção
-permitida pelo processo daquela janela). Nenhuma bloqueia a J2. Ordem
-de prioridade sugerida caso alguém abra uma janela de limpeza:
+permitida pelo processo daquela janela). Nenhuma bloqueava a J2.
 
-1. **O guarda de aridade Go é ele mesmo desguarnecido.** O mecanismo
-   que fecha o achado da §6.1 (assinatura C verificada pelo compilador
-   + aridade do tipo Go cross-checada em `generate()`) depende das
-   linhas `// C: <assinatura>` que `dump_offsets.c` emite acima de
-   cada tipo Go. Se essas linhas forem removidas por engano numa
-   edição futura do gerador, `checkGoSignatureArity` não encontra nada
-   para comparar, não erra, e a suíte atual não percebe — reabrindo
-   silenciosamente a exata classe de bug que a J1 fechou. Correção
-   recomendada: uma asserção contando `// C: ` == 25 dentro do próprio
-   checador, ou como linha extra em `TestGenerate_AgainstRealHeader`.
-2. **2 dos 27 tipos Go ficam fora do cross-check.** `fnGetApi` e
-   `fnGetVersionString` (os campos de `OrtApiBase`, emitidos fora do
-   X-macro `ORT_FUNCTIONS`) não recebem comentário `// C: `. Corretos
-   hoje por inspeção, não por construção.
+1. **[RESOLVIDO — 2026-08-28] O guarda de aridade Go era ele mesmo
+   desguarnecido.** O mecanismo que fecha o achado da §6.1 (assinatura
+   C verificada pelo compilador + aridade do tipo Go cross-checada em
+   `generate()`) dependia das linhas `// C: <assinatura>` que
+   `dump_offsets.c` emite acima de cada tipo Go — se elas sumissem
+   numa edição futura, `checkGoSignatureArity` não encontrava nada
+   para comparar e retornava sucesso silencioso. Corrigido:
+   `checkGoSignatureArity` agora conta `type fn` declarações no
+   fonte gerado e exige que o mesmo número tenha sido pareado com um
+   comentário `// C: ` — se qualquer tipo ficar sem checagem, a
+   geração falha. Prova: `TestGenerate_MissingSignatureCommentFailsArityCheck`
+   remove a linha que emite o comentário e confirma que `generate()`
+   passa a errar (antes da correção, isso passava em silêncio).
+2. **[RESOLVIDO — 2026-08-28] 2 dos 27 tipos Go ficavam fora do
+   cross-check.** `fnGetApi` e `fnGetVersionString` (os campos de
+   `OrtApiBase`, emitidos fora do X-macro `ORT_FUNCTIONS`) agora
+   recebem comentário `// C: ` como os demais — `const OrtApi*(*)(uint32_t)`
+   e `const char*(*)(void)`, os mesmos textos já usados nos
+   `_Static_assert` correspondentes. Cobertura: 27/27.
 3. **O guarda checa só aridade, não tipo.** Trocar `int32` por
    `float64` num parâmetro passaria sem erro de geração — vira bug de
    runtime em `purego.RegisterFunc` (J2), não de build. Escopo
    intencional da correção da J1, documentado no código; registrado
    aqui para não ser esquecido quando a J2 começar a consumir esses
-   tipos.
+   tipos. **Sem ação — não é defeito, é limite de escopo conhecido.**
 
 ---
 
@@ -831,3 +832,4 @@ companheiro com a `.so` embutida · plataformas além de linux/amd64 (§3.4)
 | 2026-08-26 | v0.5 — **Pendência do §6.7 resolvida** (§6.7.1): release oficial ORT 1.28.0 baixado para `~/.cache/goembed/onnxruntime/1.28.0/` (fora do repo); spike zero-CGO reexecutado contra o binário real, confirmado; contrato exato do `GetApi` verificado (`versão ≤ runtime`, struct sempre completa e atual). Repositório git inicializado, primeiro commit feito. Harness dos agentes: `CLAUDE.md` do projeto criado. Nova política §3.4a: Go e dependências sempre na última versão estável publicada (nunca beta/RC/`main`) — Go local (1.26.2) está atrasado frente à estável atual (1.27.0). `LOG_DEVELOPMENT.md` criado como diário de sessões. |
 | 2026-08-27 | v0.6 — **J1 fechada**: `go.mod` bootstrapped (`github.com/pablobelmiro/goembed`, `go 1.27.0`; um `toolchain go1.27.0` redundante foi commitado e depois removido via `go mod tidy`, descoberto porque `go generate`/`go build` recusavam rodar até ele sair). Gerador `internal/ortgen` implementado (SDD com 4 tarefas) e revisado numa revisão final de branch inteira (revisor sênior, reprodução independente empírica) — veredito "Ready to merge — With fixes". Achados Important da revisão corrigidos na mesma janela: (1) a verificação de assinatura cobria só o lado C (`_Static_assert` contra o header); o tipo Go (`GOSIG`) era digitado à mão sem checagem nenhuma — fechado emitindo a assinatura C como comentário acima de cada tipo Go gerado e cross-checando aridade em `generate()` (ver nota na §6.1); (2) erros de `cc`/do binário gerado descartavam o `err` original, mascarando "compilador ausente" como erro genérico; (3) esta própria atualização da §6.1, §7 e deste histórico, que tinha ficado pendente ao fechar a J1. Também corrigidos, na mesma leva: `TestSteelThreadOffsets` reestruturado de dois `map` paralelos para uma slice de structs cobrindo todos os offsets emitidos (não só o subconjunto original); `gofmt` aplicado a `ortcore/ortapi_gen_test.go`; comentário de topo de `dump_offsets.c` traduzido e limpo de referências a números de task efêmeros; `ortcore/generate.go` documenta a exigência de `ORT_HEADER_DIR`; o gerador respeita `$CC` (com fallback `cc`); o cabeçalho gerado de `ortapi_gen.go` agora nomeia a versão do ORT (`v1.28.0`). Nota de arquitetura registrada na §6.1: o gerador emite offsets como constantes individuais, não como bloco `const (...)` agrupado, porque `go/format` realinharia o bloco e quebraria buscas por substring exato nos testes. |
 | 2026-08-27 | v0.7 — **Revisão final da J1 fechada e enviada ao remote.** Re-revisão independente da leva de correção acima (modelo mais capaz, reprodução própria com mutações diferentes das do implementador, casos de borda do checador de aridade) confirmou os 3 Important + 8 Minor como corrigidos, sem quebra nova. 5 residuais levantados pela própria re-revisão, adjudicados nesta sessão: 3 registrados como pendência de baixo risco (§6.8 — o guarda de aridade Go não se autoprotege se o comentário `// C:` sumir; 2 dos 27 tipos ficam fora do cross-check; o guarda checa só aridade, não tipo) e 2 sem ação necessária (string de versão do ORT no cabeçalho gerado já mitigada por comentário; referência quebrada no `LOG_DEVELOPMENT.md` corrigida na hora). `git push -u origin master` feito com sucesso para `git@github.com:pablobelmiro/goembed.git` (repo remoto estava vazio). Workspace do plano (`.superpowers/sdd/`) removido — histórico do git é o registro permanente. **Sessão pausada aqui, a pedido do Pablo**, para retomar depois com planejamento da J2. |
+| 2026-08-28 | v0.8 — **Itens 1 e 2 da §6.8 fechados.** `checkGoSignatureArity` agora conta `type fn` vs `// C: ` e falha se algum tipo gerado ficar sem checagem (prova: `TestGenerate_MissingSignatureCommentFailsArityCheck`, que remove a linha do comentário e confirma o erro — antes passava em silêncio). `fnGetApi`/`fnGetVersionString` (OrtApiBase) ganharam comentário `// C: `, fechando a cobertura em 27/27. Geração reproduzida (byte-idêntica), suíte inteira passa (`CGO_ENABLED=0 build/vet/test`), `gofmt` limpo. Item 3 da §6.8 permanece sem ação — é escopo intencional, não defeito. |

@@ -50,6 +50,35 @@ func TestGenerate_AgainstRealHeader(t *testing.T) {
 	if got := strings.Count(src, "type fn"); got != 27 {
 		t.Errorf("expected 27 type declarations (25 OrtApi + 2 OrtApiBase), got %d", got)
 	}
+	if got := strings.Count(src, "// C: "); got != 27 {
+		t.Errorf("expected 27 \"// C: \" signature comments (one per generated type, ARQUITETURA_OFICIAL.md §6.8 item 1 — every type must be arity-checked), got %d", got)
+	}
+}
+
+func TestGenerate_MissingSignatureCommentFailsArityCheck(t *testing.T) {
+	dir := cachedHeaderDir(t)
+
+	// Reproduces the exact regression ARQUITETURA_OFICIAL.md §6.8 item 1
+	// warned about: dump_offsets.c's PRINT_TYPE macro stops emitting the
+	// "// C: ..." comment above generated types. Before this test existed,
+	// checkGoSignatureArity would simply find nothing to check and return
+	// nil — silently leaving every type unguarded again, reopening the
+	// hole the final branch review found and this whole mechanism exists
+	// to close. It must now fail loudly, because the count of "// C: "
+	// comments no longer matches the count of "type fn" declarations.
+	const commentPrintf = `    printf("// C: %s\n", #CSIG); \` + "\n"
+	brokenSrc := strings.Replace(dumpOffsetsC, commentPrintf, "", 1)
+	if brokenSrc == dumpOffsetsC {
+		t.Fatal("replacement did not match PRINT_TYPE's comment-emitting line — did dump_offsets.c change?")
+	}
+
+	_, err := generate(dir, brokenSrc)
+	if err == nil {
+		t.Fatal("expected an error when no \"// C: \" comments are emitted at all, generate() succeeded")
+	}
+	if !strings.Contains(err.Error(), "were paired with a") {
+		t.Errorf("error does not mention the unguarded-count mismatch, got: %v", err)
+	}
 }
 
 func TestGenerate_DivergentGoSignatureFailsArityCheck(t *testing.T) {
