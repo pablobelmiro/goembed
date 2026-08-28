@@ -78,6 +78,13 @@ func Load(opts ...LoadOption) (env *Env, err error) {
 		return nil, fmt.Errorf("ortcore: dlopen %s: %w", path, dlopenErr)
 	}
 
+	// e is declared here (not with := at its first assignment below) so
+	// this deferred recover can see it: Go closures observe a captured
+	// variable's value at the time the deferred call actually runs, not
+	// at the time defer was registered, so recovering from a panic that
+	// happens after e exists and is pinned can still unpin it.
+	var e *Env
+
 	// purego.RegisterLibFunc/RegisterFunc panic — they don't return an
 	// error — if a symbol is missing or a function pointer is invalid.
 	// That happens for real if path is a valid, dlopen-able shared
@@ -85,8 +92,21 @@ func Load(opts ...LoadOption) (env *Env, err error) {
 	// file, not its contents). Recover here so that case reports a
 	// normal error instead of crashing the caller's process, and so
 	// lib is never leaked on this path either.
+	//
+	// If e already exists and has a pinned logID (a panic after that
+	// point — e.g. from one of the RegisterFunc calls a few lines
+	// below, or conceivably from the createEnv call itself), unpin it
+	// too: an abandoned runtime.Pinner with a live pin is not just a
+	// leak, it is a guaranteed unrecoverable panic on a finalizer
+	// goroutine the next time the GC runs (confirmed empirically while
+	// fixing this) — recovering from THIS panic while leaving that one
+	// armed would just trade one crash for a later, harder-to-diagnose
+	// one.
 	defer func() {
 		if r := recover(); r != nil {
+			if e != nil {
+				e.logIDPin.Unpin()
+			}
 			purego.Dlclose(lib)
 			env = nil
 			err = fmt.Errorf("ortcore: %s: does not look like a compatible ONNX Runtime library: %v", path, r)
@@ -120,7 +140,7 @@ func Load(opts ...LoadOption) (env *Env, err error) {
 		return nil, fmt.Errorf("ortcore: %s: reports version %s but GetApi(%d) returned nil", path, reported, ortAPIVersion)
 	}
 
-	e := &Env{lib: lib, apiPtr: apiPtr}
+	e = &Env{lib: lib, apiPtr: apiPtr}
 	fnAt := func(off uintptr) uintptr { return *(*uintptr)(unsafe.Pointer(apiPtr + off)) }
 
 	var createEnv fnCreateEnv
@@ -135,10 +155,16 @@ func Load(opts ...LoadOption) (env *Env, err error) {
 	logID := e.cStringPinned("goembed")
 	st := createEnv(2 /* ORT_LOGGING_LEVEL_WARNING */, logID, &e.env)
 	if err := e.checkStatus(st); err != nil {
+		// e is being abandoned here, not returned — Close will never
+		// run for it, so the pin must be released explicitly on this
+		// path too, or it leaks (an abandoned live pin panics
+		// unrecoverably on a finalizer goroutine at the next GC).
+		e.logIDPin.Unpin()
 		purego.Dlclose(lib)
 		return nil, fmt.Errorf("ortcore: CreateEnv: %w", err)
 	}
 	if e.env == 0 {
+		e.logIDPin.Unpin() // same reasoning as the branch above
 		purego.Dlclose(lib)
 		return nil, fmt.Errorf("ortcore: CreateEnv returned a nil OrtEnv without an error status")
 	}
