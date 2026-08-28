@@ -294,3 +294,38 @@ que é intencional, não uma pendência real.
 
 **Próximo passo:** planejar a J2 (`ortcore`: carga e erros) via
 `writing-plans`, como já estava combinado.
+
+---
+
+## 2026-08-28 — J2: ortcore.Load fechada
+
+**Contexto:** execução das 3 tarefas do plano de J2 (`ortcore`: carga e
+erros), conforme o SDD aprovado.
+
+**Feito:**
+
+- **Tarefa 1:** `ortcore.Load()` com `WithLibraryPath()` para descoberta
+  de caminho seguindo ordem (explícito > env > padrão), cada com erro
+  tipado distinto. Testes unitários sem tocar a `.so` real (mocks de
+  arquivo/caminho).
+- **Tarefa 2:** `Close()` para liberação de handles e `api` struct;
+  `checkStatus` como confinador único de ciclo de vida de mensagens de
+  erro (cópia antes de chamar `ReleaseStatus`). Invariante verificável
+  por grep.
+- **Tarefa 3:** verificação do módulo inteiro:
+  - `CGO_ENABLED=0 go build ./...` ✓
+  - `CGO_ENABLED=0 go vet -unsafeptr=false ./...` ✓ (sem achados)
+  - `CGO_ENABLED=0 go test ./... -v` ✓ (23 testes: 4 em `internal/ortgen`,
+    19 em `ortcore`)
+  - `gofmt -l .` ✓ (vazio)
+  - Documentação atualizada: `ARQUITETURA_OFICIAL.md` (§7 J2 marcada
+    fechada, v0.9, §8 nova entrada); `LOG_DEVELOPMENT.md` (esta entrada).
+
+**Decisões:** nenhuma nova — execução integral do que estava no plano
+(§3.1, §3.3, §5.2, §5.4).
+
+**Pendências:** nenhuma. `ortcore.Load()` está pronto para chamar de
+fora do pacote (J3 abre a sessão propriamente dita via `CreateSession`,
+que é já bound em `Load`).
+
+**Próximo passo:** planejar a J3 (`ortcore`: sessão e metadados).
