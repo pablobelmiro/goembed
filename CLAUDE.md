@@ -63,9 +63,24 @@ em qualquer outro lugar do repositório:
 5. **Toda memória Go retida pela API nativa usa `runtime.Pinner`**,
    pareado com `Unpin` no `Close()` do wrapper — nunca `defer` local
    (`§3.6`). `runtime.KeepAlive` sozinho não é suficiente.
+6. **`go vet` deste módulo roda com `-unsafeptr=false`** (ver
+   convenção de teste abaixo). Esse analisador existe para proteger
+   memória *gerenciada pelo Go* de ser invalidada por movimentação do
+   GC/stack — a memória que `ortcore` desreferencia via `apiPtr`/
+   `basePtr` é do ONNX Runtime (C, fora do heap do Go), então o hazard
+   que o analisador detecta não pode ocorrer aqui. Verificado
+   empiricamente na J2: o próprio `purego` passa `go vet` padrão limpo
+   porque evita esse padrão via assembly (chama endereços C sem nunca
+   os desreferenciar como `unsafe.Pointer`); `ortcore` genuinamente
+   *lê* memória em offsets computados (não só chama), o que exige
+   `unsafe.Pointer(uintptr + offset)` e não tem contrapartida segura
+   reconhecida pelo analisador. Não é um escape geral — só os arquivos
+   de `ortcore` que desreferenciam `apiPtr`/`basePtr` dependem disso.
 
 ## Convenções de teste
 
+- Comando canônico de verificação:
+  `CGO_ENABLED=0 go build ./... && CGO_ENABLED=0 go vet -unsafeptr=false ./... && CGO_ENABLED=0 go test ./...`
 - A suíte inteira roda com `CGO_ENABLED=0 go test ./...` e **sem rede**
   — exceto testes do subpacote `hub`, que são os únicos que podem tocar
   a internet (e devem ser marcados/isoláveis por build tag ou `-short`).
