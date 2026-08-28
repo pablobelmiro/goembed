@@ -75,3 +75,11 @@ func TestCheckVersion_Mismatch(t *testing.T) {
 		t.Errorf("got %v, want ErrVersionMismatch", err)
 	}
 }
+
+func TestLoad_NonORTLibraryDoesNotPanic(t *testing.T) {
+	_, err := Load(WithLibraryPath("/usr/lib/x86_64-linux-gnu/libc.so.6"))
+	if err == nil {
+		t.Fatal("expected an error loading libc.so.6 as if it were ONNX Runtime, got nil")
+	}
+	t.Logf("got expected error (no panic): %v", err)
+}

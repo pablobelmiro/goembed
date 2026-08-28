@@ -2,6 +2,7 @@ package ortcore
 
 import (
 	"fmt"
+	"runtime"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -32,6 +33,14 @@ type Env struct {
 	releaseStatus         fnReleaseStatus
 	releaseEnv            fnReleaseEnv
 	releaseSessionOptions fnReleaseSessionOptions
+
+	// logIDPin pins the heap-allocated C string passed to CreateEnv's
+	// logid parameter (§3.6). It is unpinned only in Close, never by a
+	// local defer in Load — whether ONNX Runtime retains this pointer
+	// beyond the CreateEnv call itself is undocumented and unverified,
+	// so the buffer is kept valid and address-stable for the Env's
+	// entire lifetime, not just for the duration of one call.
+	logIDPin runtime.Pinner
 }
 
 // LoadOption configures Load.
@@ -53,21 +62,36 @@ func WithLibraryPath(path string) LoadOption {
 // version this package was built against (§5.4), and creates an
 // OrtEnv. The returned *Env must be closed with Close when no longer
 // needed.
-func Load(opts ...LoadOption) (*Env, error) {
+func Load(opts ...LoadOption) (env *Env, err error) {
 	var o loadOptions
 	for _, opt := range opts {
 		opt(&o)
 	}
 
-	path, err := resolveLibraryPath(o.libraryPath)
-	if err != nil {
-		return nil, err
+	path, resolveErr := resolveLibraryPath(o.libraryPath)
+	if resolveErr != nil {
+		return nil, resolveErr
 	}
 
-	lib, err := purego.Dlopen(path, purego.RTLD_NOW|purego.RTLD_GLOBAL)
-	if err != nil {
-		return nil, fmt.Errorf("ortcore: dlopen %s: %w", path, err)
+	lib, dlopenErr := purego.Dlopen(path, purego.RTLD_NOW|purego.RTLD_GLOBAL)
+	if dlopenErr != nil {
+		return nil, fmt.Errorf("ortcore: dlopen %s: %w", path, dlopenErr)
 	}
+
+	// purego.RegisterLibFunc/RegisterFunc panic — they don't return an
+	// error — if a symbol is missing or a function pointer is invalid.
+	// That happens for real if path is a valid, dlopen-able shared
+	// library that just isn't ONNX Runtime (§3.3's checks validate the
+	// file, not its contents). Recover here so that case reports a
+	// normal error instead of crashing the caller's process, and so
+	// lib is never leaked on this path either.
+	defer func() {
+		if r := recover(); r != nil {
+			purego.Dlclose(lib)
+			env = nil
+			err = fmt.Errorf("ortcore: %s: does not look like a compatible ONNX Runtime library: %v", path, r)
+		}
+	}()
 
 	var getApiBase func() uintptr
 	purego.RegisterLibFunc(&getApiBase, lib, "OrtGetApiBase")
@@ -108,7 +132,7 @@ func Load(opts ...LoadOption) (*Env, error) {
 	purego.RegisterFunc(&e.releaseEnv, fnAt(offReleaseEnv))
 	purego.RegisterFunc(&e.releaseSessionOptions, fnAt(offReleaseSessionOptions))
 
-	logID := cString("goembed")
+	logID := e.cStringPinned("goembed")
 	st := createEnv(2 /* ORT_LOGGING_LEVEL_WARNING */, logID, &e.env)
 	if err := e.checkStatus(st); err != nil {
 		purego.Dlclose(lib)
@@ -156,26 +180,40 @@ func (e *Env) Close() error {
 		e.releaseEnv(e.env)
 		e.env = 0
 	}
+	e.logIDPin.Unpin() // safe to call even if never pinned or already unpinned
 	if e.lib != 0 {
-		if err := purego.Dlclose(e.lib); err != nil {
+		lib := e.lib
+		e.lib = 0
+		if err := purego.Dlclose(lib); err != nil {
 			return fmt.Errorf("ortcore: dlclose: %w", err)
 		}
-		e.lib = 0
 	}
 	return nil
 }
 
-// cString copies a Go string into a new null-terminated byte buffer
-// and returns its address as a uintptr, for passing as a C `const
-// char*` argument. The returned buffer is not retained by this
-// package after the call it's used in returns; ONNX Runtime's
-// CreateEnv does not document retaining its logid argument beyond the
-// call (unlike, for example, output buffers it explicitly says must
-// be freed by the caller), so no runtime.Pinner is needed here — §3.6
-// governs buffers ORT retains across calls (tensor data, from J4 on),
-// not this one.
-func cString(s string) uintptr {
+// cStringPinned copies s into a new null-terminated byte buffer,
+// pins it via e.logIDPin so it survives both stack movement and (per
+// §3.6) a hypothetical future moving garbage collector, and returns
+// its address as a uintptr for passing as a C `const char*` argument.
+//
+// Pinning matters even for the duration of a single call: the plain
+// append+unsafe.Pointer form previously used here put the buffer on
+// the stack, and Go's stack copier does not adjust a uintptr — unlike
+// a real pointer — when a goroutine's stack moves during a call
+// (confirmed empirically while fixing this: forcing stack growth
+// between allocating such a buffer and reading through its raw
+// address reproducibly corrupted the read). Pinning forces the buffer
+// onto the heap and keeps its address stable regardless of what the
+// stack does.
+//
+// The pin is released only in Close, never by a local defer in the
+// caller — whether ONNX Runtime retains this specific pointer beyond
+// the call that receives it is undocumented, so the buffer is kept
+// pinned for the Env's entire lifetime rather than assumed safe to
+// release early.
+func (e *Env) cStringPinned(s string) uintptr {
 	b := append([]byte(s), 0)
+	e.logIDPin.Pin(&b[0])
 	return uintptr(unsafe.Pointer(&b[0]))
 }
 
